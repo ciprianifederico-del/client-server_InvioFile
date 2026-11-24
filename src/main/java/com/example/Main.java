@@ -9,11 +9,21 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 
 public class Main {
 
     public static void main(String[] args) throws IOException {
 
+        String[][] TIPI = {
+            {"txt", "text/plain; charset=utf-8"},
+            {"md",  "text/markdown; charset=utf-8"},
+            {"csv", "text/csv; charset=utf-8"},
+        };
+        boolean ok = true;
+        boolean badRequest = false;
+        boolean notFound = false;
+        boolean notImplemented = false;
         ServerSocket s = new ServerSocket(3000);
         System.out.println("Server in ascolto sulla porta 3000...");
 
@@ -34,10 +44,8 @@ public class Main {
         String[] parti = richiesta.trim().split("\\s+");
 
         if (parti.length == 0 || parti[0].isEmpty()) {
-            out.println("ERR SYNTAX");
-            ss.close();
-            s.close();
-            return;
+            badRequest = true;   // corretto: prima era false e il 400 non partiva mai
+            ok = false;
         }
 
         File cartella = new File("documenti");
@@ -45,12 +53,12 @@ public class Main {
 
         if (parti[0].equalsIgnoreCase("LEGGI")) {
             if (parti.length < 2) {
-                out.println("ERR SYNTAX");   // "LEGGI" senza nome file
-                ss.close();
-                s.close();
-                return;
+                badRequest = true;   // idem
+                ok = false;
+                nomeFile = "";       // evita ArrayIndexOutOfBoundsException su parti[1]
+            } else {
+                nomeFile = parti[1];
             }
-            nomeFile = parti[1];
         } else {
             // nessun comando: il primo token è direttamente il nome del file
             nomeFile = parti[0];
@@ -92,35 +100,39 @@ public class Main {
 
         if (!file.isFile()) {
             if (parti[0].equalsIgnoreCase("LEGGI")) {
-                out.println("ERR MISSING");
+                notFound = true;
             } else {
-                out.println("ERR UNKNOWNCMD");
+                notImplemented = true;
             }
-            ss.close();
-            s.close();
-            return;
+            ok = false;
         }
 
-        try (BufferedReader lettoreFile = new BufferedReader(
-                new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
-
+        //try (BufferedReader lettoreFile = new BufferedReader(
+                //new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+            byte[] dati = Files.readAllBytes(file.toPath());
+            String contenuto = new String(dati, StandardCharsets.UTF_8);
             // Risponde OK con l'estensione reale del file trovato
-            if (nomeFile.contains(".")) {
                 String estensione = nomeFile.substring(nomeFile.lastIndexOf('.') + 1);
-                out.println("OK FILE ," + "Type " + estensione);
-            } else {
-                out.println("OK FILE");
-            }
-            out.println(); // riga vuota di separazione
+                for(String[] tipo : TIPI) {
+                    if (tipo[0].equalsIgnoreCase(estensione)) {
+                        if (ok) out.println("200 OK");
+                        else if (badRequest) out.println("400 Bad Request");
+                        else if (notFound) out.println("404 Not Found");
+                        else if (notImplemented) out.println("501 Not Implemented");
+                        out.println("Content-Type: " + tipo[1]);
+                        out.println("Content-Length: " + dati.length);
+                        out.println();
+                        out.print(contenuto);
+                        out.flush();   // print() non svuota il buffer da solo
+                        break;
+                    }
+                }
 
-            String riga;
-            while ((riga = lettoreFile.readLine()) != null) {
-                out.println(riga);
-            }
 
-        } catch (IOException e) {
-            out.println("ERR READ");
-        }
+
+       // } catch (IOException e) {
+        //    out.println("500 Internal Server Error ");
+       // }
 
         ss.close();
         s.close();
