@@ -9,10 +9,11 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 public class Main {
+
     public static void main(String[] args) throws IOException {
+
         ServerSocket s = new ServerSocket(3000);
         System.out.println("Server in ascolto sulla porta 3000...");
 
@@ -29,9 +30,9 @@ public class Main {
             return;
         }
 
+        // Divide la richiesta in token separati da spazi
         String[] parti = richiesta.trim().split("\\s+");
 
-        // token = 0 se vuota, 1 se solo il nome file, 2 se "LEGGI nomefile"
         if (parti.length == 0 || parti[0].isEmpty()) {
             out.println("ERR SYNTAX");
             ss.close();
@@ -39,7 +40,9 @@ public class Main {
             return;
         }
 
+        File cartella = new File("documenti");
         String nomeFile;
+
         if (parti[0].equalsIgnoreCase("LEGGI")) {
             if (parti.length < 2) {
                 out.println("ERR SYNTAX");   // "LEGGI" senza nome file
@@ -50,23 +53,49 @@ public class Main {
             nomeFile = parti[1];
         } else {
             // nessun comando: il primo token è direttamente il nome del file
-            File prova = new File("documenti", parti[0]);
-            if (prova.isFile()) {
-                nomeFile = parti[0];
-            } else {
-                // non è un file esistente e non è un comando noto
-                out.println("ERR UNKNOWNCMD");
-                ss.close();
-                s.close();
-                return;
+            nomeFile = parti[0];
+        }
+
+        File file = new File(cartella, nomeFile);
+
+        // Se il nome non esiste e non ha estensione, cerca nella cartella
+        // un file il cui nome base corrisponda
+        if (!file.isFile() && !nomeFile.contains(".")) {
+
+            File[] files = cartella.listFiles(); // può essere null
+
+            if (files != null) {
+                for (File f : files) {
+
+                    if (!f.isFile()) {
+                        continue;
+                    }
+
+                    String nomeCompleto = f.getName();
+                    String nomeSenzaEstensione;
+
+                    if (nomeCompleto.contains(".")) {
+                        nomeSenzaEstensione = nomeCompleto.substring(0, nomeCompleto.lastIndexOf('.'));
+                    } else {
+                        nomeSenzaEstensione = nomeCompleto;
+                    }
+
+                    if (nomeSenzaEstensione.equalsIgnoreCase(nomeFile)) {
+                        // trovato: aggiorno nome e file col nome completo
+                        nomeFile = nomeCompleto;
+                        file = f;
+                        break;
+                    }
+                }
             }
         }
 
-        File cartella = new File("documenti");
-        File[] files = cartella.listFiles();
-        boolean presente = Arrays.asList(files).contains(nomeFile);
-        if (!presente) {
-            out.println("ERR MISSING");
+        if (!file.isFile()) {
+            if (parti[0].equalsIgnoreCase("LEGGI")) {
+                out.println("ERR MISSING");
+            } else {
+                out.println("ERR UNKNOWNCMD");
+            }
             ss.close();
             s.close();
             return;
@@ -74,13 +103,21 @@ public class Main {
 
         try (BufferedReader lettoreFile = new BufferedReader(
                 new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
-            out.println("OK FILE");
-            out.println(); // riga vuota
+
+            // Risponde OK con l'estensione reale del file trovato
+            if (nomeFile.contains(".")) {
+                String estensione = nomeFile.substring(nomeFile.lastIndexOf('.') + 1);
+                out.println("OK FILE ," + "Type " + estensione);
+            } else {
+                out.println("OK FILE");
+            }
+            out.println(); // riga vuota di separazione
 
             String riga;
             while ((riga = lettoreFile.readLine()) != null) {
                 out.println(riga);
             }
+
         } catch (IOException e) {
             out.println("ERR READ");
         }
